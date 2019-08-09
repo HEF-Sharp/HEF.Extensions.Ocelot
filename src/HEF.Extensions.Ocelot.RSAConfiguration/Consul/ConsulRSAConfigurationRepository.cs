@@ -7,6 +7,7 @@ using Ocelot.Provider.Consul;
 using Ocelot.Responses;
 using System;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace HEF.Extensions.Ocelot.RSAConfiguration
@@ -19,6 +20,9 @@ namespace HEF.Extensions.Ocelot.RSAConfiguration
         private readonly IOcelotCache<string> _cache;
 
         private readonly IOcelotLogger _logger;
+
+        private static int _privateKeyCacheMutex = 0;
+        private static int _publicKeyCacheMutex = 0;
 
         public ConsulRSAConfigurationRepository(
             IOcelotCache<string> cache,
@@ -74,8 +78,13 @@ namespace HEF.Extensions.Ocelot.RSAConfiguration
             var result = await QueryConsulKV(PrivateConfigurationKey);
             if (result != null && result.Data != null)
             {
-                _cache.AddAndDelete(PrivateConfigurationKey, result.Data,
-                    TimeSpan.FromMinutes(10), _configurationKeyPrefix);
+                if (Interlocked.CompareExchange(ref _privateKeyCacheMutex, 1, 0) == 0)
+                {
+                    _cache.AddAndDelete(PrivateConfigurationKey, result.Data,
+                        TimeSpan.FromMinutes(10), _configurationKeyPrefix);
+
+                    Interlocked.Exchange(ref _privateKeyCacheMutex, 0);
+                }
             }
 
             return result;
@@ -93,8 +102,13 @@ namespace HEF.Extensions.Ocelot.RSAConfiguration
             var result = await QueryConsulKV(PublicConfigurationKey);
             if (result != null && result.Data != null)
             {
-                _cache.AddAndDelete(PublicConfigurationKey, result.Data,
-                    TimeSpan.FromMinutes(10), _configurationKeyPrefix);
+                if (Interlocked.CompareExchange(ref _publicKeyCacheMutex, 1, 0) == 0)
+                {
+                    _cache.AddAndDelete(PublicConfigurationKey, result.Data,
+                        TimeSpan.FromMinutes(10), _configurationKeyPrefix);
+
+                    Interlocked.Exchange(ref _publicKeyCacheMutex, 0);
+                }
             }
 
             return result;
